@@ -179,6 +179,8 @@ td .mini{font-size:.75rem;color:var(--gray)}
 .seg button.on-aus{color:var(--red);background:#fee2e2;font-weight:700}
 .motivo-input{width:100%;min-width:170px;padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;background:#fef2f2;transition:.2s}
 .motivo-input:focus{outline:none;border-color:var(--red)}
+.atraso-input{width:100%;min-width:120px;padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;background:#fffbf0;transition:.2s}
+.atraso-input:focus{outline:none;border-color:var(--amber);box-shadow:0 0 0 3px rgba(217,119,6,.12)}
 .hidden{display:none!important}
 
 /* ---------- Botones ---------- */
@@ -659,7 +661,11 @@ function renderAsistencia(){
         <button type="button" class="${pres?'on-pres':''}" onclick="marcar('${fecha}','${instId}','${g.id}',true)">✔ Presente</button>
         <button type="button" class="${aus?'on-aus':''}" onclick="marcar('${fecha}','${instId}','${g.id}',false)">✘ Ausente</button>
       </div></td>
-      <td data-label="Motivo de falta" style="width:38%">
+      <td data-label="Atraso">
+        <input class="atraso-input" id="at-${g.id}" placeholder="min, h:mm, 2h (ej: 30)"
+          value="${esc(r&&r.atrasoTxt?r.atrasoTxt:'')}" oninput="guardarAtraso('${fecha}','${instId}','${g.id}',this.value)">
+      </td>
+      <td data-label="Motivo de falta" style="width:34%">
         <input class="motivo-input ${aus?'':'hidden'}" id="mot-${g.id}" placeholder="Motivo (ej: licencia médica)"
           value="${esc(r&&r.motivo?r.motivo:'')}" oninput="guardarMotivo('${fecha}','${instId}','${g.id}',this.value)">
       </td>
@@ -672,7 +678,7 @@ function renderAsistencia(){
       <button class="btn btn-accent btn-sm" onclick="marcarTodos('${fecha}','${instId}')">Marcar todos presentes</button>
     </div>
     <div class="table-wrap"><table class="responsive">
-      <thead><tr><th>Guardia</th><th>Estado</th><th>Motivo de falta</th></tr></thead>
+      <thead><tr><th>Guardia</th><th>Estado</th><th>Atraso</th><th>Motivo de falta</th></tr></thead>
       <tbody>${filas}</tbody></table></div>
     <div style="padding:10px 14px;font-size:.8rem;color:var(--gray)">Los cambios se guardan automáticamente en este dispositivo.</div>
   </div>`;
@@ -685,9 +691,9 @@ function marcar(fecha,instId,gid,pres){
   if(!pres){
     const resp=prompt('Motivo de la falta de '+(g?g.nombre:'el guardia')+':',prev.motivo||'');
     if(resp===null)return; /* cancelado: no cambia */
-    reg[gid]={presente:false,motivo:resp.trim(),hora:prev.hora||horaAhora()};
+    reg[gid]={presente:false,motivo:resp.trim(),hora:prev.hora||horaAhora(),atraso:null,atrasoTxt:''};
   }else{
-    reg[gid]={presente:true,motivo:'',hora:horaAhora()};
+    reg[gid]={presente:true,motivo:'',hora:horaAhora(),atraso:prev.atraso??null,atrasoTxt:prev.atrasoTxt||''};
   }
   guardar(LS_A,asistencia);
   renderAsistencia();renderDashboard();renderInstalaciones();renderControl();
@@ -695,7 +701,7 @@ function marcar(fecha,instId,gid,pres){
 }
 function guardarMotivo(fecha,instId,gid,val){
   const reg=getReg(fecha,instId);
-  if(!reg[gid])reg[gid]={presente:false,motivo:'',hora:''};
+  if(!reg[gid])reg[gid]={presente:false,motivo:'',hora:'',atraso:null,atrasoTxt:''};
   reg[gid].presente=false;reg[gid].motivo=val;
   if(!reg[gid].hora)reg[gid].hora=horaAhora();
   guardar(LS_A,asistencia);
@@ -703,10 +709,38 @@ function guardarMotivo(fecha,instId,gid,val){
 function marcarTodos(fecha,instId){
   const gInst=guardias.filter(g=>g.instalacionId===instId);
   const reg=getReg(fecha,instId);
-  gInst.forEach(g=>reg[g.id]={presente:true,motivo:'',hora:horaAhora()});
+  gInst.forEach(g=>reg[g.id]={presente:true,motivo:'',hora:horaAhora(),atraso:null,atrasoTxt:''});
   guardar(LS_A,asistencia);
   renderAsistencia();renderDashboard();renderInstalaciones();renderControl();
   toast('✔ Todos marcados presentes');
+}
+/* Atraso: acepta minutos, h:mm, 2h o 45min */
+function parseAtraso(v){
+  const t=(v||'').trim();
+  if(!t)return{min:null,txt:''};
+  let min=null;
+  const hm=t.match(/^(\d+)[:hH](\d+)$/);
+  const ho=t.match(/^(\d+)[hH]$/);
+  const mo=t.match(/^(\d+(?:[.,]\d+)?)\s*min$/i);
+  if(hm)min=parseInt(hm[1],10)*60+parseInt(hm[2],10);
+  else if(ho)min=parseInt(ho[1],10)*60;
+  else if(mo)min=Math.round(parseFloat(mo[1].replace(',','.')));
+  else if(/^\d+$/.test(t))min=parseInt(t,10);
+  return{min,txt:t};
+}
+function fmtAtraso(min){
+  if(min==null)return null;
+  const h=Math.floor(min/60),m=min%60;
+  if(h&&m)return h+' h '+m+' min';
+  if(h)return h+' h';
+  return m+' min';
+}
+function guardarAtraso(fecha,instId,gid,val){
+  const reg=getReg(fecha,instId);
+  if(!reg[gid])reg[gid]={presente:false,motivo:'',hora:'',atraso:null,atrasoTxt:''};
+  const p=parseAtraso(val);
+  reg[gid].atraso=p.min;reg[gid].atrasoTxt=p.txt;
+  guardar(LS_A,asistencia);
 }
 
 /* ================= RENDER: CONTROL ================= */
@@ -735,6 +769,7 @@ function renderControl(){
         <td data-label="Turno">${g.turno?esc(g.turno):'<span class="na">—</span>'}</td>
         <td data-label="Estado">${st}</td>
         <td data-label="Hora">${r&&r.hora?esc(r.hora):'—'}</td>
+        <td data-label="Atraso">${r&&r.atraso!=null?fmtAtraso(r.atraso):'<span class="na">—</span>'}</td>
         <td data-label="Motivo">${r&&r.motivo?esc(r.motivo):'—'}</td>
       </tr>`;
     }).join('');
@@ -744,7 +779,7 @@ function renderControl(){
           <span style="font-size:.78rem;color:#b6c8e0">${fmtFec(fecha)} · Presentes ${pres}/${gInst.length} (${p===null?'S/D':p+'%'})</span></div>
       </div>
       <div class="table-wrap"><table class="responsive">
-        <thead><tr><th>Guardia</th><th>Turno</th><th>Estado</th><th>Hora</th><th>Motivo</th></tr></thead>
+        <thead><tr><th>Guardia</th><th>Turno</th><th>Estado</th><th>Hora</th><th>Atraso</th><th>Motivo</th></tr></thead>
         <tbody>${rows}</tbody></table></div>
     </div>`;
   }).join('');
@@ -1012,10 +1047,10 @@ function imprimirControl(){
     body+=`<h3>${esc(inst.nombre)}${inst.grupo?' · '+esc(inst.grupo):''} <span class="res">— ${pres}/${gInst.length} presentes (${p===null?'S/D':p+'%'})</span></h3>`;
     if(inst.supervisorNombre)body+=`<p class="sup">Supervisor: ${esc(inst.supervisorNombre)}${inst.supervisorTel?' · '+esc(inst.supervisorTel):''}${inst.supervisorEmail?' · '+esc(inst.supervisorEmail):''}</p>`;
     if(!gInst.length){body+='<p class="sup">Sin guardias asignados.</p>';return}
-    body+=`<table><tr><th>Guardia</th><th>Turno</th><th>Estado</th><th>Hora</th><th>Motivo de falta</th></tr>`+
+    body+=`<table><tr><th>Guardia</th><th>Turno</th><th>Estado</th><th>Hora</th><th>Atraso</th><th>Motivo de falta</th></tr>`+
       gInst.map(g=>{const r=getReg(fecha,inst.id)[g.id];
         const st=!r?'Sin registro':r.presente?'Presente':'AUSENTE';
-        return `<tr><td>${esc(g.nombre)}</td><td>${esc(g.turno||'—')}</td><td class="${r&&!r.presente?'a':r?'p':''}">${st}</td><td>${r&&r.hora?esc(r.hora):'—'}</td><td>${r&&r.motivo?esc(r.motivo):'—'}</td></tr>`}).join('')+`</table>`;
+        return `<tr><td>${esc(g.nombre)}</td><td>${esc(g.turno||'—')}</td><td class="${r&&!r.presente?'a':r?'p':''}">${st}</td><td>${r&&r.hora?esc(r.hora):'—'}</td><td>${r&&r.atraso!=null?fmtAtraso(r.atraso):'—'}</td><td>${r&&r.motivo?esc(r.motivo):'—'}</td></tr>`}).join('')+`</table>`;
   });
   const w=window.open('','_blank');
   w.document.write(cabeceraImpresion('CONTROL DE ASISTENCIA','Fecha: '+fmtFec(fecha))+body+pieImpresion());
@@ -1126,9 +1161,9 @@ function cargarEjemplo(){
   ];
   asistencia={};
   asistencia[hoy]={};
-  asistencia[hoy]['i1']={g1:{presente:true,motivo:'',hora:'08:02'},g2:{presente:true,motivo:'',hora:'20:05'},g3:{presente:false,motivo:'Licencia médica',hora:'08:15'}};
-  asistencia[hoy]['i2']={g4:{presente:true,motivo:'',hora:'20:01'},g5:{presente:true,motivo:'',hora:'08:10'},g6:{presente:false,motivo:'No se presentó, sin aviso',hora:'08:20'}};
-  asistencia[hoy]['i3']={g7:{presente:true,motivo:'',hora:'20:03'},g8:{presente:false,motivo:'',hora:''}};
+  asistencia[hoy]['i1']={g1:{presente:true,motivo:'',hora:'08:02',atraso:null,atrasoTxt:''},g2:{presente:true,motivo:'',hora:'08:20',atraso:20,atrasoTxt:'20'},g3:{presente:false,motivo:'Licencia médica',hora:'08:15',atraso:null,atrasoTxt:''}};
+  asistencia[hoy]['i2']={g4:{presente:true,motivo:'',hora:'20:01',atraso:null,atrasoTxt:''},g5:{presente:true,motivo:'',hora:'08:45',atraso:45,atrasoTxt:'45'},g6:{presente:false,motivo:'No se presentó, sin aviso',hora:'08:20',atraso:null,atrasoTxt:''}};
+  asistencia[hoy]['i3']={g7:{presente:true,motivo:'',hora:'20:03',atraso:null,atrasoTxt:''},g8:{presente:false,motivo:'',hora:'',atraso:null,atrasoTxt:''}};
   guardarTodo();renderTodo();
   toast('✅ Datos de ejemplo cargados');
 }
