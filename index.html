@@ -546,12 +546,12 @@ footer b{color:#7db8ff}
 </div>
 
 <div id="toast"></div>
-<footer>WOLF<b>INTEGRAL</b> · Control de Asistencia de Guardias · Los datos se guardan automáticamente en este dispositivo · <b>v2.6</b></footer>
+<footer>WOLF<b>INTEGRAL</b> · Control de Asistencia de Guardias · Los datos se guardan automáticamente en este dispositivo · <b>v2.7</b></footer>
 
 <script>
 /* ================= DATOS ================= */
 const LS_G='wi_guardias', LS_I='wi_instalaciones', LS_A='wi_asistencia';
-const APP_VER='v2.6';
+const APP_VER='v2.7';
 let guardias=[], instalaciones=[], asistencia={};
 const NACIONALIDADES=['Chile','Venezuela','Colombia','Argentina','China','Perú','Bolivia','Brasil','Otro'];
 const hoyStr=()=>{const d=new Date();return d.toISOString().slice(0,10)};
@@ -693,8 +693,9 @@ function renderAsistencia(){
         <input class="atraso-input" id="at-${g.id}" placeholder="min, h:mm, 2h (ej: 30)"
           value="${esc(r&&r.atrasoTxt?r.atrasoTxt:'')}" oninput="guardarAtraso('${fecha}','${instId}','${g.id}',this.value)">
       </td>
-      <td data-label="Motivo de falta" style="width:30%">
-        <input class="motivo-input ${aus?'':'hidden'}" id="mot-${g.id}" placeholder="Motivo (ej: licencia médica)"
+      <td data-label="Motivo" style="width:30%">
+        <input class="motivo-input ${(aus||tipo==='extra')?'':'hidden'}" id="mot-${g.id}"
+          placeholder="${tipo==='extra'&&!aus?'Motivo del turno extra (ej: urgencia, cobertura)':'Motivo (ej: licencia médica)'}"
           value="${esc(r&&r.motivo?r.motivo:'')}" oninput="guardarMotivo('${fecha}','${instId}','${g.id}',this.value)">
       </td>
     </tr>`;
@@ -706,7 +707,7 @@ function renderAsistencia(){
       <button class="btn btn-accent btn-sm" onclick="marcarTodos('${fecha}','${instId}')">Marcar todos presentes</button>
     </div>
     <div class="table-wrap"><table class="responsive">
-      <thead><tr><th>Guardia</th><th>Tipo de turno</th><th>Estado</th><th>Atraso</th><th>Motivo de falta</th></tr></thead>
+      <thead><tr><th>Guardia</th><th>Tipo de turno</th><th>Estado</th><th>Atraso</th><th>Motivo</th></tr></thead>
       <tbody>${filas}</tbody></table></div>
     <div style="padding:10px 14px;font-size:.8rem;color:var(--gray)">Los cambios se guardan automáticamente en este dispositivo.</div>
   </div>`;
@@ -730,7 +731,9 @@ function marcar(fecha,instId,gid,pres){
 function guardarMotivo(fecha,instId,gid,val){
   const reg=getReg(fecha,instId);
   if(!reg[gid])reg[gid]={presente:false,motivo:'',hora:'',atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''};
-  reg[gid].presente=false;reg[gid].motivo=val;
+  /* en turno extra el motivo es del turno, no de una falta: no cambia el estado */
+  if(reg[gid].tipo!=='extra')reg[gid].presente=false;
+  reg[gid].motivo=val;
   if(!reg[gid].hora)reg[gid].hora=horaAhora();
   guardar(LS_A,asistencia);
 }
@@ -774,6 +777,14 @@ function guardarAtraso(fecha,instId,gid,val){
 function guardarTipo(fecha,instId,gid,tipo){
   const reg=getReg(fecha,instId);
   if(!reg[gid])reg[gid]={presente:false,motivo:'',hora:'',atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''};
+  if(tipo==='sin'){
+    /* Sin turno por pauta: se considera ausente con ese motivo */
+    reg[gid].presente=false;
+    reg[gid].motivo='Sin turno por pauta';
+  }else if(reg[gid].motivo==='Sin turno por pauta'){
+    /* al salir de "sin pauta" se limpia el motivo automático */
+    reg[gid].motivo='';
+  }
   reg[gid].tipo=tipo;
   if(tipo!=='cambio')reg[gid].cambioDe='';
   guardar(LS_A,asistencia);
@@ -1298,8 +1309,8 @@ function cargarEjemplo(){
   ];
   asistencia={};
   asistencia[hoy]={};
-  asistencia[hoy]['i1']={g1:{presente:true,motivo:'',hora:'08:02',atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''},g2:{presente:true,motivo:'',hora:'08:20',atraso:20,atrasoTxt:'20',tipo:'extra',cambioDe:''},g3:{presente:false,motivo:'Licencia médica',hora:'08:15',atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''}};
-  asistencia[hoy]['i2']={g4:{presente:true,motivo:'',hora:'20:01',atraso:null,atrasoTxt:'',tipo:'sin',cambioDe:''},g5:{presente:true,motivo:'',hora:'08:45',atraso:45,atrasoTxt:'45',tipo:'cambio',cambioDe:'por Felipe Bravo'},g6:{presente:false,motivo:'No se presentó, sin aviso',hora:'08:20',atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''}};
+  asistencia[hoy]['i1']={g1:{presente:true,motivo:'',hora:'08:02',atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''},g2:{presente:true,motivo:'Turno extra autorizado',hora:'08:20',atraso:20,atrasoTxt:'20',tipo:'extra',cambioDe:''},g3:{presente:false,motivo:'Licencia médica',hora:'08:15',atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''}};
+  asistencia[hoy]['i2']={g4:{presente:false,motivo:'Sin turno por pauta',hora:'',atraso:null,atrasoTxt:'',tipo:'sin',cambioDe:''},g5:{presente:true,motivo:'',hora:'08:45',atraso:45,atrasoTxt:'45',tipo:'cambio',cambioDe:'por Felipe Bravo'},g6:{presente:false,motivo:'No se presentó, sin aviso',hora:'08:20',atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''}};
   asistencia[hoy]['i3']={g7:{presente:true,motivo:'',hora:'20:03',atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''},g8:{presente:false,motivo:'',hora:'',atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''}};
   guardarTodo();renderTodo();
   toast('✅ Datos de ejemplo cargados');
