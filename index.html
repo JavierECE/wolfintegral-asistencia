@@ -546,12 +546,12 @@ footer b{color:#7db8ff}
 </div>
 
 <div id="toast"></div>
-<footer>WOLF<b>INTEGRAL</b> · Control de Asistencia de Guardias · Los datos se guardan automáticamente en este dispositivo · <b>v2.7</b></footer>
+<footer>WOLF<b>INTEGRAL</b> · Control de Asistencia de Guardias · Los datos se guardan automáticamente en este dispositivo · <b>v2.8</b></footer>
 
 <script>
 /* ================= DATOS ================= */
 const LS_G='wi_guardias', LS_I='wi_instalaciones', LS_A='wi_asistencia';
-const APP_VER='v2.7';
+const APP_VER='v2.8';
 let guardias=[], instalaciones=[], asistencia={};
 const NACIONALIDADES=['Chile','Venezuela','Colombia','Argentina','China','Perú','Bolivia','Brasil','Otro'];
 const hoyStr=()=>{const d=new Date();return d.toISOString().slice(0,10)};
@@ -1324,9 +1324,12 @@ function init(){
   dh.value=hoyStr();ah.value=hoyStr();ch.value=hoyStr();
   document.getElementById('headerDate').textContent=
     new Date().toLocaleDateString('es-CL',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-  dh.addEventListener('change',()=>{renderDashboard();renderInstalaciones()});
-  ah.addEventListener('change',()=>renderAsistencia());
-  ch.addEventListener('change',()=>renderControl());
+  /* Al cambiar la fecha en una pestaña, se sincroniza en todas para evitar ver datos de días distintos */
+  const sincFechas=origen=>{const v=document.getElementById(origen).value;
+    ['dashFecha','asistFecha','ctlFecha'].forEach(id=>{if(id!==origen)document.getElementById(id).value=v})};
+  dh.addEventListener('change',()=>{sincFechas('dashFecha');renderTodo()});
+  ah.addEventListener('change',()=>{sincFechas('asistFecha');renderTodo()});
+  ch.addEventListener('change',()=>{sincFechas('ctlFecha');renderTodo()});
   document.getElementById('asistInst').addEventListener('change',()=>renderAsistencia());
   document.getElementById('ctlInst').addEventListener('change',()=>renderControl());
   document.getElementById('gBuscar').addEventListener('input',renderGuardias);
