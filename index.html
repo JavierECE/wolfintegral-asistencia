@@ -1012,9 +1012,15 @@ async function subirDatos(){
   localStorage.setItem('wi_pantry_id',id);
   const b=document.getElementById('btnSubir');b.disabled=true;
   syncMsg('Subiendo datos a la nube…');
-  const res=await intentarSync(()=>fetch(PANTRY_API(id),{method:'PUT',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({guardias,instalaciones,asistencia})}),'subir');
+  const payload=JSON.stringify({guardias,instalaciones,asistencia});
+  /* 1) intenta actualizar (PUT); 2) si el basket aún no existe, lo crea (POST) */
+  let res=await intentarSync(()=>fetch(PANTRY_API(id),{method:'PUT',
+    headers:{'Content-Type':'application/json'},body:payload}),'subir');
+  if(!res.ok&&res.basket){
+    syncMsg('Creando el espacio en la nube por primera vez…');
+    res=await intentarSync(()=>fetch(PANTRY_API(id),{method:'POST',
+      headers:{'Content-Type':'application/json'},body:payload}),'subir');
+  }
   b.disabled=false;
   if(res.ok){
     const ahora=new Date().toLocaleString('es-CL');
@@ -1065,7 +1071,7 @@ async function intentarSync(hacer,tipo){
         return {ok:false,positivo:false,mensaje:'✘ El ID no corresponde a un pantry existente. Verifique que lo copió completo en getpantry.cloud.'};
       }
       if(det.includes('basket')){
-        return {ok:false,positivo:true,mensaje:'✔ El pantry existe, pero aún no tiene datos subidos. Presione ⬆ Subir datos.'};
+        return {ok:false,positivo:true,basket:true,mensaje:'✔ El pantry existe, pero aún no tiene datos subidos. Presione ⬆ Subir datos.'};
       }
       return {ok:false,positivo:false,mensaje:'✘ El servicio respondió con error '+r.status+'. Espere un momento e intente de nuevo.'};
     }catch(e){
