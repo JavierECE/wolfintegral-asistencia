@@ -531,9 +531,9 @@ footer b{color:#7db8ff}
       </div>
       <p style="font-size:.72rem;color:var(--gray);margin-bottom:12px">Para crearlo: abra <b>getpantry.cloud</b>, ingrese su correo y presione <b>Create a Pantry</b>. Copie el ID que aparece y péguelo aquí en <b>todos</b> los dispositivos.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-primary btn-sm" onclick="subirDatos()">⬆ Subir datos a la nube</button>
-        <button class="btn btn-outline btn-sm" onclick="descargarDatos()">⬇ Descargar datos de la nube</button>
-        <button class="btn btn-outline btn-sm" onclick="probarConexion()">🔌 Probar conexión</button>
+        <button class="btn btn-primary btn-sm" id="btnSubir" onclick="subirDatos()">⬆ Subir datos a la nube</button>
+        <button class="btn btn-outline btn-sm" id="btnDescargar" onclick="descargarDatos()">⬇ Descargar datos de la nube</button>
+        <button class="btn btn-outline btn-sm" id="btnProbar" onclick="probarConexion()">🔌 Probar conexión</button>
       </div>
       <div id="syncStatus" style="margin-top:12px;font-size:.85rem;color:var(--slate)"></div>
       <div id="syncMeta" style="margin-top:8px;font-size:.74rem;color:var(--gray)"></div>
@@ -991,26 +991,16 @@ async function probarConexion(){
   if(!id){syncMsg('✘ Escriba el ID del pantry primero (créelo en getpantry.cloud).');return}
   if(!navigator.onLine){syncMsg('✘ Sin conexión a internet. Conéctese y vuelva a intentar.');return}
   localStorage.setItem('wi_pantry_id',id);
+  const b=document.getElementById('btnProbar');b.disabled=true;
   syncMsg('Probando conexión con la nube…');
-  try{
-    const r=await fetch(PANTRY_API(id));
-    if(r.ok){
-      const d=await r.json().catch(()=>null);
-      const n=d&&Array.isArray(d.guardias)?d.guardias.length:0;
-      syncMsg('✔ Conexión OK: el pantry existe'+(d&&d.guardias?' y tiene '+n+' guardias guardados':'')+'. Ya puede ⬆ subir o ⬇ descargar.',true);
-    }else{
-      const err=await r.json().catch(()=>({}));
-      const det=((err.details||'')+(err.error||'')).toLowerCase();
-      if(det.includes('pantry')){
-        syncMsg('✘ El ID no corresponde a un pantry existente. Revíselo en getpantry.cloud.');
-      }else if(det.includes('basket')){
-        syncMsg('✔ El pantry existe, pero aún no tiene datos subidos. Presione ⬆ Subir datos.',true);
-      }else{
-        syncMsg('✘ Respuesta inesperada del servicio ('+r.status+'). Intente nuevamente.');
-      }
-    }
-  }catch(e){
-    syncMsg('✘ No se pudo conectar: verifique su conexión a internet e intente de nuevo.');
+  const res=await intentarSync(()=>fetch(PANTRY_API(id)),'probar');
+  b.disabled=false;
+  if(res.ok){
+    const d=res.datos;
+    const n=d&&Array.isArray(d.guardias)?d.guardias.length:0;
+    syncMsg('✔ Conexión OK: el pantry existe'+(d&&d.guardias?' y tiene '+n+' guardias guardados':'')+'. Ya puede ⬆ subir o ⬇ descargar.',true);
+  }else{
+    syncMsg(res.mensaje,res.positivo);
   }
 }
 async function subirDatos(){
@@ -1020,29 +1010,19 @@ async function subirDatos(){
   const bytes=tamanoDatos();
   if(bytes>1024*1024){syncMsg('✘ Los datos pesan '+(bytes/1048576).toFixed(1)+' MB y el límite gratuito es ~1.44 MB. Use ⬇ Exportar y borre registros antiguos.');return}
   localStorage.setItem('wi_pantry_id',id);
-  syncMsg('Subiendo datos… (intento 1/2)');
-  for(let intento=1;intento<=2;intento++){
-    try{
-      const r=await fetch(PANTRY_API(id),{method:'PUT',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({guardias,instalaciones,asistencia})});
-      if(r.ok){
-        const ahora=new Date().toLocaleString('es-CL');
-        localStorage.setItem('wi_last_sync',ahora);
-        document.getElementById('syncMeta').textContent='Datos actuales: '+(tamanoDatos()/1024).toFixed(0)+' KB · Última sincronización: '+ahora;
-        syncMsg('✔ Datos subidos a la nube · '+ahora,true);
-        return;
-      }
-      const err=await r.json().catch(()=>({}));
-      throw new Error(err.error||r.status);
-    }catch(e){
-      if(intento===2){
-        syncMsg('✘ Error al subir ('+(e.message||'red')+'). Verifique el ID del pantry y su conexión.');
-      }else{
-        syncMsg('Subiendo datos… (intento 2/2)');
-        await new Promise(r=>setTimeout(r,1500));
-      }
-    }
+  const b=document.getElementById('btnSubir');b.disabled=true;
+  syncMsg('Subiendo datos a la nube…');
+  const res=await intentarSync(()=>fetch(PANTRY_API(id),{method:'PUT',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({guardias,instalaciones,asistencia})}),'subir');
+  b.disabled=false;
+  if(res.ok){
+    const ahora=new Date().toLocaleString('es-CL');
+    localStorage.setItem('wi_last_sync',ahora);
+    document.getElementById('syncMeta').textContent='Datos actuales: '+(tamanoDatos()/1024).toFixed(0)+' KB · Última sincronización: '+ahora;
+    syncMsg('✔ Datos subidos a la nube · '+ahora,true);
+  }else{
+    syncMsg(res.mensaje,res.positivo);
   }
 }
 async function descargarDatos(){
@@ -1051,27 +1031,51 @@ async function descargarDatos(){
   if(!navigator.onLine){syncMsg('✘ Sin conexión a internet. Conéctese y vuelva a intentar.');return}
   localStorage.setItem('wi_pantry_id',id);
   if(!confirm('¿Descargar los datos de la nube y reemplazar los locales?'))return;
-  syncMsg('Descargando datos… (intento 1/2)');
-  for(let intento=1;intento<=2;intento++){
+  const b=document.getElementById('btnDescargar');b.disabled=true;
+  syncMsg('Descargando datos de la nube…');
+  const res=await intentarSync(()=>fetch(PANTRY_API(id)),'descargar');
+  b.disabled=false;
+  if(res.ok){
+    const d=res.datos;
+    if(!d||!d.guardias||!d.instalaciones){syncMsg('✘ La nube no tiene datos válidos. Suba primero desde otro dispositivo.');return}
+    guardias=d.guardias;instalaciones=d.instalaciones;asistencia=d.asistencia||{};
+    guardarTodo();renderTodo();
+    const ahora=new Date().toLocaleString('es-CL');
+    localStorage.setItem('wi_last_sync',ahora);
+    document.getElementById('syncMeta').textContent='Datos actuales: '+(tamanoDatos()/1024).toFixed(0)+' KB · Última sincronización: '+ahora;
+    syncMsg('✔ Datos descargados y aplicados · '+ahora,true);
+  }else{
+    syncMsg(res.mensaje,res.positivo);
+  }
+}
+/* Ejecuta la petición (máx. 2 intentos con pausa) y traduce los errores a mensajes claros */
+async function intentarSync(hacer,tipo){
+  const esRed=m=>/load failed|failed to fetch|networkerror|timeout|aborted|not allowed|blocked|cors/i.test(m);
+  for(let i=1;i<=2;i++){
     try{
-      const r=await fetch(PANTRY_API(id));
-      if(!r.ok){const err=await r.json().catch(()=>({}));throw new Error(err.error||r.status)}
-      const d=await r.json();
-      if(!d.guardias||!d.instalaciones)throw new Error('formato');
-      guardias=d.guardias;instalaciones=d.instalaciones;asistencia=d.asistencia||{};
-      guardarTodo();renderTodo();
-      const ahora=new Date().toLocaleString('es-CL');
-      localStorage.setItem('wi_last_sync',ahora);
-      document.getElementById('syncMeta').textContent='Datos actuales: '+(tamanoDatos()/1024).toFixed(0)+' KB · Última sincronización: '+ahora;
-      syncMsg('✔ Datos descargados y aplicados · '+ahora,true);
-      return;
-    }catch(e){
-      if(intento===2){
-        syncMsg('✘ No se pudo descargar ('+(e.message||'red')+'). Verifique el ID y la conexión. El espacio debe tener datos subidos antes.');
-      }else{
-        syncMsg('Descargando datos… (intento 2/2)');
-        await new Promise(r=>setTimeout(r,1500));
+      const r=await hacer();
+      if(r.ok)return {ok:true,datos:await r.json().catch(()=>null)};
+      const txt=await r.text().catch(()=>'');
+      if(r.status===429||/limited/i.test(txt)){
+        return {ok:false,positivo:false,mensaje:'⚠ El servicio de nube está saturado temporalmente. Espere ~1 minuto y vuelva a intentar (evite pulsar varias veces seguidas).'};
       }
+      let det='';
+      try{const e=JSON.parse(txt);det=((e.details||'')+(e.error||'')).toLowerCase()}catch(e){}
+      if(det.includes('pantry')){
+        return {ok:false,positivo:false,mensaje:'✘ El ID no corresponde a un pantry existente. Verifique que lo copió completo en getpantry.cloud.'};
+      }
+      if(det.includes('basket')){
+        return {ok:false,positivo:true,mensaje:'✔ El pantry existe, pero aún no tiene datos subidos. Presione ⬆ Subir datos.'};
+      }
+      return {ok:false,positivo:false,mensaje:'✘ El servicio respondió con error '+r.status+'. Espere un momento e intente de nuevo.'};
+    }catch(e){
+      const msg=String(e.message||e);
+      if(i===2){
+        return {ok:false,positivo:false,mensaje:esRed(msg)
+          ?'✘ No se pudo conectar con la nube. Verifique su internet (en datos móviles revise la señal) y espere ~1 minuto entre intentos.'
+          :'✘ Error al sincronizar ('+msg+'). Intente nuevamente.'};
+      }
+      await new Promise(r=>setTimeout(r,4000));
     }
   }
 }
