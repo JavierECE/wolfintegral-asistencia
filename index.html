@@ -521,19 +521,21 @@ footer b{color:#7db8ff}
       <button class="modal-close" onclick="cerrarModal('modalSync')">✕</button>
     </div>
     <div class="modal-body">
-      <p style="font-size:.85rem;color:var(--slate)">Comparta los datos entre dispositivos usando un espacio JSON gratuito en <b>jsonblob.com</b> (sin cuenta). Cree el espacio una vez, copie la URL y péguela en los otros dispositivos para descargar los datos.</p>
+      <p style="font-size:.85rem;color:var(--slate)">Comparta los datos entre dispositivos mediante un <b>Pantry</b> gratuito (getpantry.cloud, sin cuenta). Se crea una sola vez y se usa el <b>mismo ID</b> en todos los dispositivos.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">
-        <button class="btn btn-primary btn-sm" onclick="crearEspacioNube()">✨ Crear espacio nuevo</button>
+        <button class="btn btn-primary btn-sm" onclick="abrirPantry()">✨ Crear pantry (abre getpantry.cloud)</button>
       </div>
-      <div class="field" style="margin-bottom:12px">
-        <label>URL del espacio</label>
-        <input id="syncUrl" placeholder="https://jsonblob.com/api/jsonBlob/xxxxx">
+      <div class="field" style="margin-bottom:8px">
+        <label>ID del pantry</label>
+        <input id="syncPantry" placeholder="Pegue aquí el ID (ej: 1234abcd-…)">
       </div>
+      <p style="font-size:.72rem;color:var(--gray);margin-bottom:12px">Para crearlo: abra <b>getpantry.cloud</b>, ingrese su correo y presione <b>Create a Pantry</b>. Copie el ID que aparece y péguelo aquí en <b>todos</b> los dispositivos.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-primary btn-sm" onclick="subirDatos()">⬆ Subir datos a la nube</button>
         <button class="btn btn-outline btn-sm" onclick="descargarDatos()">⬇ Descargar datos de la nube</button>
       </div>
       <div id="syncStatus" style="margin-top:12px;font-size:.85rem;color:var(--slate)"></div>
+      <div id="syncMeta" style="margin-top:8px;font-size:.74rem;color:var(--gray)"></div>
     </div>
   </div>
 </div>
@@ -553,7 +555,13 @@ const DIA=['dom','lun','mar','mié','jue','vie','sáb'];
 function cargar(){try{guardias=JSON.parse(localStorage.getItem(LS_G))||[]}catch(e){guardias=[]}
   try{instalaciones=JSON.parse(localStorage.getItem(LS_I))||[]}catch(e){instalaciones=[]}
   try{asistencia=JSON.parse(localStorage.getItem(LS_A))||{}}catch(e){asistencia={}}}
-function guardar(k,v){localStorage.setItem(k,JSON.stringify(v))}
+function guardar(k,v){
+  try{localStorage.setItem(k,JSON.stringify(v));return true}
+  catch(e){
+    toast('⚠ Almacenamiento lleno: no se pudo guardar. Use ⬇ Exportar y borre registros antiguos.');
+    return false;
+  }
+}
 function guardarTodo(){guardar(LS_G,guardias);guardar(LS_I,instalaciones);guardar(LS_A,asistencia)}
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -964,52 +972,80 @@ function eliminarInstalacion(iid){
   instalaciones=instalaciones.filter(x=>x.id!==iid);
   guardarTodo();renderTodo();toast('Instalación eliminada');
 }
-/* ================= SINCRONIZACIÓN EN LA NUBE ================= */
+/* ================= SINCRONIZACIÓN EN LA NUBE (Pantry) ================= */
+const NOMBRE_BASKET='wolfintegral-asistencia';
+const PANTRY_API=id=>`https://getpantry.cloud/apiv1/pantry/${id}/basket/${NOMBRE_BASKET}`;
+function tamanoDatos(){try{return JSON.stringify({guardias,instalaciones,asistencia}).length}catch(e){return 0}}
 function abrirSync(){
-  document.getElementById('syncUrl').value=localStorage.getItem('wi_sync_url')||'';
+  document.getElementById('syncPantry').value=localStorage.getItem('wi_pantry_id')||'';
   document.getElementById('syncStatus').textContent='';
+  document.getElementById('syncMeta').textContent='Datos actuales: '+(tamanoDatos()/1024).toFixed(0)+' KB · Última sincronización: '+(localStorage.getItem('wi_last_sync')||'nunca');
   abrirModal('modalSync');
 }
 function syncMsg(m,ok){const el=document.getElementById('syncStatus');
   el.textContent=m;el.style.color=ok?'var(--green)':'var(--red)'}
-async function crearEspacioNube(){
-  syncMsg('Creando espacio en la nube…');
-  try{
-    const r=await fetch('https://jsonblob.com/api/jsonBlob',{method:'POST',
-      headers:{'Content-Type':'application/json'},body:JSON.stringify({guardias,instalaciones,asistencia})});
-    const loc=r.headers.get('Location');
-    if(!r.ok||!loc)throw 0;
-    const url='https://jsonblob.com'+loc;
-    localStorage.setItem('wi_sync_url',url);
-    document.getElementById('syncUrl').value=url;
-    syncMsg('✔ Espacio creado · '+new Date().toLocaleString('es-CL')+'. Copie la URL para usarla en los otros dispositivos.',true);
-  }catch(e){syncMsg('✘ No se pudo crear el espacio. Revise su conexión a internet.')}
-}
+function abrirPantry(){window.open('https://getpantry.cloud/','_blank')}
 async function subirDatos(){
-  const url=document.getElementById('syncUrl').value.trim();
-  if(!url||!url.includes('jsonblob.com')){syncMsg('✘ Ingrese la URL del espacio (jsonblob.com).');return}
-  localStorage.setItem('wi_sync_url',url);
-  syncMsg('Subiendo datos…');
-  try{
-    const r=await fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({guardias,instalaciones,asistencia})});
-    if(!r.ok)throw 0;
-    syncMsg('✔ Datos subidos a la nube · '+new Date().toLocaleString('es-CL'),true);
-  }catch(e){syncMsg('✘ Error al subir. Verifique la URL y la conexión.')}
+  const id=document.getElementById('syncPantry').value.trim();
+  if(!id){syncMsg('✘ Escriba el ID del pantry (créelo primero en getpantry.cloud).');return}
+  if(!navigator.onLine){syncMsg('✘ Sin conexión a internet. Conéctese y vuelva a intentar.');return}
+  const bytes=tamanoDatos();
+  if(bytes>1024*1024){syncMsg('✘ Los datos pesan '+(bytes/1048576).toFixed(1)+' MB y el límite gratuito es ~1.44 MB. Use ⬇ Exportar y borre registros antiguos.');return}
+  localStorage.setItem('wi_pantry_id',id);
+  syncMsg('Subiendo datos… (intento 1/2)');
+  for(let intento=1;intento<=2;intento++){
+    try{
+      const r=await fetch(PANTRY_API(id),{method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({guardias,instalaciones,asistencia})});
+      if(r.ok){
+        const ahora=new Date().toLocaleString('es-CL');
+        localStorage.setItem('wi_last_sync',ahora);
+        document.getElementById('syncMeta').textContent='Datos actuales: '+(tamanoDatos()/1024).toFixed(0)+' KB · Última sincronización: '+ahora;
+        syncMsg('✔ Datos subidos a la nube · '+ahora,true);
+        return;
+      }
+      const err=await r.json().catch(()=>({}));
+      throw new Error(err.error||r.status);
+    }catch(e){
+      if(intento===2){
+        syncMsg('✘ Error al subir ('+(e.message||'red')+'). Verifique el ID del pantry y su conexión.');
+      }else{
+        syncMsg('Subiendo datos… (intento 2/2)');
+        await new Promise(r=>setTimeout(r,1500));
+      }
+    }
+  }
 }
 async function descargarDatos(){
-  const url=document.getElementById('syncUrl').value.trim();
-  if(!url||!url.includes('jsonblob.com')){syncMsg('✘ Ingrese la URL del espacio (jsonblob.com).');return}
-  localStorage.setItem('wi_sync_url',url);
+  const id=document.getElementById('syncPantry').value.trim();
+  if(!id){syncMsg('✘ Escriba el ID del pantry (el mismo que usa el dispositivo que subió los datos).');return}
+  if(!navigator.onLine){syncMsg('✘ Sin conexión a internet. Conéctese y vuelva a intentar.');return}
+  localStorage.setItem('wi_pantry_id',id);
   if(!confirm('¿Descargar los datos de la nube y reemplazar los locales?'))return;
-  syncMsg('Descargando datos…');
-  try{
-    const r=await fetch(url);const d=await r.json();
-    if(!d.guardias||!d.instalaciones)throw 0;
-    guardias=d.guardias;instalaciones=d.instalaciones;asistencia=d.asistencia||{};
-    guardarTodo();renderTodo();
-    syncMsg('✔ Datos descargados y aplicados · '+new Date().toLocaleString('es-CL'),true);
-  }catch(e){syncMsg('✘ No se pudo descargar. Verifique la URL y la conexión.')}
+  syncMsg('Descargando datos… (intento 1/2)');
+  for(let intento=1;intento<=2;intento++){
+    try{
+      const r=await fetch(PANTRY_API(id));
+      if(!r.ok){const err=await r.json().catch(()=>({}));throw new Error(err.error||r.status)}
+      const d=await r.json();
+      if(!d.guardias||!d.instalaciones)throw new Error('formato');
+      guardias=d.guardias;instalaciones=d.instalaciones;asistencia=d.asistencia||{};
+      guardarTodo();renderTodo();
+      const ahora=new Date().toLocaleString('es-CL');
+      localStorage.setItem('wi_last_sync',ahora);
+      document.getElementById('syncMeta').textContent='Datos actuales: '+(tamanoDatos()/1024).toFixed(0)+' KB · Última sincronización: '+ahora;
+      syncMsg('✔ Datos descargados y aplicados · '+ahora,true);
+      return;
+    }catch(e){
+      if(intento===2){
+        syncMsg('✘ No se pudo descargar ('+(e.message||'red')+'). Verifique el ID y la conexión. El espacio debe tener datos subidos antes.');
+      }else{
+        syncMsg('Descargando datos… (intento 2/2)');
+        await new Promise(r=>setTimeout(r,1500));
+      }
+    }
+  }
 }
 
 /* ================= IMPRESIÓN: REPORTES ================= */
@@ -1115,10 +1151,14 @@ function exportarDatos(){
   const stamp=ts.getFullYear()+'-'+p(ts.getMonth()+1)+'-'+p(ts.getDate())+'_'+p(ts.getHours())+p(ts.getMinutes());
   const data={exportado:ts.toLocaleString('es-CL'),guardias,instalaciones,asistencia};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
+  a.href=url;
   a.download='wolfintegral-respaldo-'+stamp+'.json';
-  a.click();URL.revokeObjectURL(a.href);
+  document.body.appendChild(a);
+  a.click();
+  /* En algunos móviles (iOS Safari) revocar de inmediato anula la descarga */
+  setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url)},10000);
   toast('⬇ Respaldo guardado · '+ts.toLocaleString('es-CL'));
 }
 function importarDatos(ev){
@@ -1187,6 +1227,9 @@ function init(){
   document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.modal-overlay.open').forEach(o=>o.classList.remove('open'))});
   /* autoguardado al salir o cerrar */
   window.addEventListener('beforeunload',()=>guardarTodo());
+  /* aviso de conexión para la sincronización */
+  window.addEventListener('offline',()=>toast('📡 Sin conexión a internet: la sincronización en la nube no estará disponible'));
+  window.addEventListener('online',()=>toast('📡 Conexión restablecida'));
   renderTodo();
 }
 init();
