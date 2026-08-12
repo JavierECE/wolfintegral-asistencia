@@ -185,6 +185,7 @@ td .mini{font-size:.75rem;color:var(--gray)}
 .tipo-select:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(4,107,210,.12)}
 .cambio-input{width:100%;min-width:130px;margin-top:5px;padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;background:#f5f3ff;transition:.2s}
 .cambio-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(93,79,255,.12)}
+.tipo-hint{font-size:.7rem;color:#b45309;margin-top:4px}
 .hidden{display:none!important}
 
 /* ---------- Botones ---------- */
@@ -546,12 +547,12 @@ footer b{color:#7db8ff}
 </div>
 
 <div id="toast"></div>
-<footer>WOLF<b>INTEGRAL</b> · Control de Asistencia de Guardias · Los datos se guardan automáticamente en este dispositivo · <b>v2.8</b></footer>
+<footer>WOLF<b>INTEGRAL</b> · Control de Asistencia de Guardias · Los datos se guardan automáticamente en este dispositivo · <b>v2.9</b></footer>
 
 <script>
 /* ================= DATOS ================= */
 const LS_G='wi_guardias', LS_I='wi_instalaciones', LS_A='wi_asistencia';
-const APP_VER='v2.8';
+const APP_VER='v2.9';
 let guardias=[], instalaciones=[], asistencia={};
 const NACIONALIDADES=['Chile','Venezuela','Colombia','Argentina','China','Perú','Bolivia','Brasil','Otro'];
 const hoyStr=()=>{const d=new Date();return d.toISOString().slice(0,10)};
@@ -636,14 +637,19 @@ function renderDashboard(){
         </div>
       </div>
       ${c.inst.supervisorNombre?`<div class="inst-sup">Supervisor: <b>${esc(c.inst.supervisorNombre)}</b>${c.inst.supervisorTel?' · '+esc(c.inst.supervisorTel):''}</div>`:''}
+      ${c.contados.length===0?`<div style="font-size:.75rem;color:var(--amber);font-weight:600;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:6px 9px">
+        ${c.gInst.length===0?'⚠ Sin guardias asignados a esta instalación':`⚠ ${c.gInst.length} guardia(s) con tipo "sin pauta" o "cambio de turno" — excluidos del cálculo`}
+      </div>`:''}
       <div class="inst-row">
         <span>En pauta/extra: <b>${c.contados.length}</b> · Presentes: <b>${c.pres}</b></span>
         <span class="pct ${c.p===null?'':pctCls(c.p)}">${c.p===null?'S/D':c.p+'%'}</span>
       </div>
-      ${c.gInst.length>c.contados.length?`<div style="font-size:.72rem;color:var(--gray)">Excluidos del cálculo (sin pauta/cambio de turno): ${c.gInst.length-c.contados.length}</div>`:''}
+      ${c.gInst.length>c.contados.length&&c.contados.length>0?`<div style="font-size:.72rem;color:var(--gray)">Excluidos del cálculo (sin pauta/cambio de turno): ${c.gInst.length-c.contados.length}</div>`:''}
       <div class="bar"><span class="${c.p===null?'':pctCls(c.p)}" style="width:${c.p||0}%"></span></div>
       <div class="inst-row" style="justify-content:flex-start;gap:10px">
-        ${c.falt.length>0?`<span class="missing-count">🔴 ${c.falt.length} faltante(s)</span>`:`<span style="color:var(--green);font-weight:700;font-size:.85rem">✔ Sin faltantes</span>`}
+        ${c.contados.length===0
+          ?'<span class="na" style="font-size:.8rem">— Sin cálculo (ver nota)</span>'
+          :(c.falt.length>0?`<span class="missing-count">🔴 ${c.falt.length} faltante(s)</span>`:`<span style="color:var(--green);font-weight:700;font-size:.85rem">✔ Sin faltantes</span>`)}
         <button class="mini-btn" onclick="irARegistrar('${c.inst.id}')">Registrar asistencia →</button>
       </div>
       ${fb}
@@ -684,6 +690,7 @@ function renderAsistencia(){
         </select>
         <input class="cambio-input ${tipo==='cambio'?'':'hidden'}" id="cam-${g.id}" placeholder="¿Por qué guardia?"
           value="${esc(r&&r.cambioDe?r.cambioDe:'')}" oninput="guardarCambioDe('${fecha}','${instId}','${g.id}',this.value)">
+        <div class="tipo-hint ${tipo==='sin'?'':'hidden'}">Se considerará ausente con motivo "sin turno por pauta"</div>
       </td>
       <td data-label="Estado"><div class="seg">
         <button type="button" class="${pres?'on-pres':''}" onclick="marcar('${fecha}','${instId}','${g.id}',true)">✔ Presente</button>
@@ -926,11 +933,14 @@ function renderInstalaciones(){
       ${inst.supervisorNombre
         ?`<div class="inst-sup"><b>Supervisor:</b> ${esc(inst.supervisorNombre)}${inst.supervisorTel?' · '+esc(inst.supervisorTel):''}${inst.supervisorEmail?' · '+esc(inst.supervisorEmail):''}</div>`
         :'<div class="inst-sup" style="color:var(--gray)">Sin supervisor asignado</div>'}
+      ${contados.length===0?`<div style="font-size:.75rem;color:var(--amber);font-weight:600;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:6px 9px">
+        ${gInst.length===0?'⚠ Sin guardias asignados a esta instalación':`⚠ Todos los guardias con tipo "sin pauta" o "cambio" — excluidos del cálculo`}
+      </div>`:''}
       <div class="inst-row">
-        <span>En pauta/extra: <b>${contados.length}</b> · Presentes: <b>${pres}</b> · Faltan: <b style="color:${falt.length?'var(--red)':'var(--green)'}">${falt.length}</b></span>
+        <span>En pauta/extra: <b>${contados.length}</b> · Presentes: <b>${pres}</b> · Faltan: <b style="color:${falt.length?'var(--red)':contados.length===0?'var(--gray)':'var(--green)'}">${falt.length}</b></span>
         <span class="pct ${p===null?'':pctCls(p)}">${p===null?'S/D':p+'%'}</span>
       </div>
-      ${gInst.length>contados.length?`<div style="font-size:.72rem;color:var(--gray)">Excluidos del cálculo (sin pauta/cambio): ${gInst.length-contados.length} · Total asignados: ${gInst.length}</div>`:''}
+      ${gInst.length>contados.length&&contados.length>0?`<div style="font-size:.72rem;color:var(--gray)">Excluidos del cálculo (sin pauta/cambio): ${gInst.length-contados.length} · Total asignados: ${gInst.length}</div>`:''}
       <div class="bar"><span class="${p===null?'':pctCls(p)}" style="width:${p||0}%"></span></div>
       ${gInst.length?`<div class="table-wrap"><table class="responsive">
         <thead><tr><th>Guardia</th><th>Test de droga</th><th>R.R.I.</th></tr></thead>
