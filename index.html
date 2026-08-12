@@ -542,11 +542,12 @@ footer b{color:#7db8ff}
 </div>
 
 <div id="toast"></div>
-<footer>WOLF<b>INTEGRAL</b> · Control de Asistencia de Guardias · Los datos se guardan automáticamente en este dispositivo</footer>
+<footer>WOLF<b>INTEGRAL</b> · Control de Asistencia de Guardias · Los datos se guardan automáticamente en este dispositivo · <b>v2.5</b></footer>
 
 <script>
 /* ================= DATOS ================= */
 const LS_G='wi_guardias', LS_I='wi_instalaciones', LS_A='wi_asistencia';
+const APP_VER='v2.5';
 let guardias=[], instalaciones=[], asistencia={};
 const NACIONALIDADES=['Chile','Venezuela','Colombia','Argentina','China','Perú','Bolivia','Brasil','Otro'];
 const hoyStr=()=>{const d=new Date();return d.toISOString().slice(0,10)};
@@ -980,7 +981,7 @@ function tamanoDatos(){try{return JSON.stringify({guardias,instalaciones,asisten
 function abrirSync(){
   document.getElementById('syncPantry').value=localStorage.getItem('wi_pantry_id')||'';
   document.getElementById('syncStatus').textContent='';
-  document.getElementById('syncMeta').textContent='Datos actuales: '+(tamanoDatos()/1024).toFixed(0)+' KB · Última sincronización: '+(localStorage.getItem('wi_last_sync')||'nunca');
+  document.getElementById('syncMeta').textContent='Versión '+APP_VER+' · Datos actuales: '+(tamanoDatos()/1024).toFixed(0)+' KB · Última sincronización: '+(localStorage.getItem('wi_last_sync')||'nunca');
   abrirModal('modalSync');
 }
 function syncMsg(m,ok){const el=document.getElementById('syncStatus');
@@ -1013,12 +1014,12 @@ async function subirDatos(){
   const b=document.getElementById('btnSubir');b.disabled=true;
   syncMsg('Subiendo datos a la nube…');
   const payload=JSON.stringify({guardias,instalaciones,asistencia});
-  /* 1) intenta actualizar (PUT); 2) si el basket aún no existe, lo crea (POST) */
-  let res=await intentarSync(()=>fetch(PANTRY_API(id),{method:'PUT',
+  /* Pantry: POST crea o actualiza el basket (misma clave por nombre). Si responde que ya existe, usa PUT. */
+  let res=await intentarSync(()=>fetch(PANTRY_API(id),{method:'POST',
     headers:{'Content-Type':'application/json'},body:payload}),'subir');
-  if(!res.ok&&res.basket){
-    syncMsg('Creando el espacio en la nube por primera vez…');
-    res=await intentarSync(()=>fetch(PANTRY_API(id),{method:'POST',
+  if(!res.ok&&res.existe){
+    syncMsg('Actualizando el espacio en la nube…');
+    res=await intentarSync(()=>fetch(PANTRY_API(id),{method:'PUT',
       headers:{'Content-Type':'application/json'},body:payload}),'subir');
   }
   b.disabled=false;
@@ -1067,13 +1068,17 @@ async function intentarSync(hacer,tipo){
       }
       let det='';
       try{const e=JSON.parse(txt);det=((e.details||'')+(e.error||'')).toLowerCase()}catch(e){}
+      try{localStorage.setItem('wi_last_error',(r.status+' '+txt).slice(0,300))}catch(e){}
       if(det.includes('pantry')){
         return {ok:false,positivo:false,mensaje:'✘ El ID no corresponde a un pantry existente. Verifique que lo copió completo en getpantry.cloud.'};
+      }
+      if(det.includes('exists')||det.includes('already')){
+        return {ok:false,positivo:false,existe:true,mensaje:'✔ El espacio ya existe en la nube. Se actualizará.'};
       }
       if(det.includes('basket')){
         return {ok:false,positivo:true,basket:true,mensaje:'✔ El pantry existe, pero aún no tiene datos subidos. Presione ⬆ Subir datos.'};
       }
-      return {ok:false,positivo:false,mensaje:'✘ El servicio respondió con error '+r.status+'. Espere un momento e intente de nuevo.'};
+      return {ok:false,positivo:false,mensaje:'✘ El servicio respondió '+r.status+': '+(txt.trim().slice(0,150)||'sin detalles')+'. Espere un momento e intente de nuevo.'};
     }catch(e){
       const msg=String(e.message||e);
       if(i===2){
