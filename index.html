@@ -533,6 +533,7 @@ footer b{color:#7db8ff}
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-primary btn-sm" onclick="subirDatos()">⬆ Subir datos a la nube</button>
         <button class="btn btn-outline btn-sm" onclick="descargarDatos()">⬇ Descargar datos de la nube</button>
+        <button class="btn btn-outline btn-sm" onclick="probarConexion()">🔌 Probar conexión</button>
       </div>
       <div id="syncStatus" style="margin-top:12px;font-size:.85rem;color:var(--slate)"></div>
       <div id="syncMeta" style="margin-top:8px;font-size:.74rem;color:var(--gray)"></div>
@@ -985,6 +986,33 @@ function abrirSync(){
 function syncMsg(m,ok){const el=document.getElementById('syncStatus');
   el.textContent=m;el.style.color=ok?'var(--green)':'var(--red)'}
 function abrirPantry(){window.open('https://getpantry.cloud/','_blank')}
+async function probarConexion(){
+  const id=document.getElementById('syncPantry').value.trim();
+  if(!id){syncMsg('✘ Escriba el ID del pantry primero (créelo en getpantry.cloud).');return}
+  if(!navigator.onLine){syncMsg('✘ Sin conexión a internet. Conéctese y vuelva a intentar.');return}
+  localStorage.setItem('wi_pantry_id',id);
+  syncMsg('Probando conexión con la nube…');
+  try{
+    const r=await fetch(PANTRY_API(id));
+    if(r.ok){
+      const d=await r.json().catch(()=>null);
+      const n=d&&Array.isArray(d.guardias)?d.guardias.length:0;
+      syncMsg('✔ Conexión OK: el pantry existe'+(d&&d.guardias?' y tiene '+n+' guardias guardados':'')+'. Ya puede ⬆ subir o ⬇ descargar.',true);
+    }else{
+      const err=await r.json().catch(()=>({}));
+      const det=((err.details||'')+(err.error||'')).toLowerCase();
+      if(det.includes('pantry')){
+        syncMsg('✘ El ID no corresponde a un pantry existente. Revíselo en getpantry.cloud.');
+      }else if(det.includes('basket')){
+        syncMsg('✔ El pantry existe, pero aún no tiene datos subidos. Presione ⬆ Subir datos.',true);
+      }else{
+        syncMsg('✘ Respuesta inesperada del servicio ('+r.status+'). Intente nuevamente.');
+      }
+    }
+  }catch(e){
+    syncMsg('✘ No se pudo conectar: verifique su conexión a internet e intente de nuevo.');
+  }
+}
 async function subirDatos(){
   const id=document.getElementById('syncPantry').value.trim();
   if(!id){syncMsg('✘ Escriba el ID del pantry (créelo primero en getpantry.cloud).');return}
