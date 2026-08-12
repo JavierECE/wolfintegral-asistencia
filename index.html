@@ -181,6 +181,10 @@ td .mini{font-size:.75rem;color:var(--gray)}
 .motivo-input:focus{outline:none;border-color:var(--red)}
 .atraso-input{width:100%;min-width:120px;padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;background:#fffbf0;transition:.2s}
 .atraso-input:focus{outline:none;border-color:var(--amber);box-shadow:0 0 0 3px rgba(217,119,6,.12)}
+.tipo-select{width:100%;min-width:155px;padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;background:#f0f7ff;transition:.2s}
+.tipo-select:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(4,107,210,.12)}
+.cambio-input{width:100%;min-width:130px;margin-top:5px;padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;background:#f5f3ff;transition:.2s}
+.cambio-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(93,79,255,.12)}
 .hidden{display:none!important}
 
 /* ---------- Botones ---------- */
@@ -542,12 +546,12 @@ footer b{color:#7db8ff}
 </div>
 
 <div id="toast"></div>
-<footer>WOLF<b>INTEGRAL</b> · Control de Asistencia de Guardias · Los datos se guardan automáticamente en este dispositivo · <b>v2.5</b></footer>
+<footer>WOLF<b>INTEGRAL</b> · Control de Asistencia de Guardias · Los datos se guardan automáticamente en este dispositivo · <b>v2.6</b></footer>
 
 <script>
 /* ================= DATOS ================= */
 const LS_G='wi_guardias', LS_I='wi_instalaciones', LS_A='wi_asistencia';
-const APP_VER='v2.5';
+const APP_VER='v2.6';
 let guardias=[], instalaciones=[], asistencia={};
 const NACIONALIDADES=['Chile','Venezuela','Colombia','Argentina','China','Perú','Bolivia','Brasil','Otro'];
 const hoyStr=()=>{const d=new Date();return d.toISOString().slice(0,10)};
@@ -598,10 +602,12 @@ function renderDashboard(){
   let esperados=0,presentes=0;
   const cards=instalaciones.map(inst=>{
     const gInst=guardias.filter(g=>g.instalacionId===inst.id);
-    const falt=faltantesDe(fecha,inst.id,gInst);
-    const pres=gInst.length-falt.length;
-    esperados+=gInst.length;presentes+=pres;
-    return {inst,gInst,pres,falt,p:calcPct(pres,gInst.length)};
+    /* Solo cuentan en el cálculo quienes están con turno por pauta o turno extra */
+    const contados=gInst.filter(g=>{const r=getReg(fecha,inst.id)[g.id];const t=r?r.tipo:'pauta';return t==='pauta'||t==='extra'});
+    const falt=faltantesDe(fecha,inst.id,contados);
+    const pres=contados.length-falt.length;
+    esperados+=contados.length;presentes+=pres;
+    return {inst,gInst,contados,pres,falt,p:calcPct(pres,contados.length)};
   });
   const pTotal=calcPct(presentes,esperados);
   document.getElementById('dashStats').innerHTML=
@@ -631,9 +637,10 @@ function renderDashboard(){
       </div>
       ${c.inst.supervisorNombre?`<div class="inst-sup">Supervisor: <b>${esc(c.inst.supervisorNombre)}</b>${c.inst.supervisorTel?' · '+esc(c.inst.supervisorTel):''}</div>`:''}
       <div class="inst-row">
-        <span>Guardias: <b>${c.gInst.length}</b> · Presentes: <b>${c.pres}</b></span>
+        <span>En pauta/extra: <b>${c.contados.length}</b> · Presentes: <b>${c.pres}</b></span>
         <span class="pct ${c.p===null?'':pctCls(c.p)}">${c.p===null?'S/D':c.p+'%'}</span>
       </div>
+      ${c.gInst.length>c.contados.length?`<div style="font-size:.72rem;color:var(--gray)">Excluidos del cálculo (sin pauta/cambio de turno): ${c.gInst.length-c.contados.length}</div>`:''}
       <div class="bar"><span class="${c.p===null?'':pctCls(c.p)}" style="width:${c.p||0}%"></span></div>
       <div class="inst-row" style="justify-content:flex-start;gap:10px">
         ${c.falt.length>0?`<span class="missing-count">🔴 ${c.falt.length} faltante(s)</span>`:`<span style="color:var(--green);font-weight:700;font-size:.85rem">✔ Sin faltantes</span>`}
@@ -665,8 +672,19 @@ function renderAsistencia(){
   const reg=getReg(fecha,instId);
   const filas=gInst.map(g=>{
     const r=reg[g.id];const pres=r?r.presente:false;const aus=r&&!r.presente;
+    const tipo=r?r.tipo:'pauta';
     return `<tr>
       <td data-label="Guardia"><b>${esc(g.nombre)}</b><br><span class="mini">${esc(g.turno||'')}${g.turno?' · ':''}${esc(g.telefono||'')}</span></td>
+      <td data-label="Tipo de turno">
+        <select class="tipo-select" onchange="guardarTipo('${fecha}','${instId}','${g.id}',this.value)">
+          <option value="pauta"${tipo==='pauta'?' selected':''}>Con turno por pauta</option>
+          <option value="sin"${tipo==='sin'?' selected':''}>Sin turno por pauta</option>
+          <option value="extra"${tipo==='extra'?' selected':''}>Turno extra</option>
+          <option value="cambio"${tipo==='cambio'?' selected':''}>Cambio de turno</option>
+        </select>
+        <input class="cambio-input ${tipo==='cambio'?'':'hidden'}" id="cam-${g.id}" placeholder="¿Por qué guardia?"
+          value="${esc(r&&r.cambioDe?r.cambioDe:'')}" oninput="guardarCambioDe('${fecha}','${instId}','${g.id}',this.value)">
+      </td>
       <td data-label="Estado"><div class="seg">
         <button type="button" class="${pres?'on-pres':''}" onclick="marcar('${fecha}','${instId}','${g.id}',true)">✔ Presente</button>
         <button type="button" class="${aus?'on-aus':''}" onclick="marcar('${fecha}','${instId}','${g.id}',false)">✘ Ausente</button>
@@ -675,7 +693,7 @@ function renderAsistencia(){
         <input class="atraso-input" id="at-${g.id}" placeholder="min, h:mm, 2h (ej: 30)"
           value="${esc(r&&r.atrasoTxt?r.atrasoTxt:'')}" oninput="guardarAtraso('${fecha}','${instId}','${g.id}',this.value)">
       </td>
-      <td data-label="Motivo de falta" style="width:34%">
+      <td data-label="Motivo de falta" style="width:30%">
         <input class="motivo-input ${aus?'':'hidden'}" id="mot-${g.id}" placeholder="Motivo (ej: licencia médica)"
           value="${esc(r&&r.motivo?r.motivo:'')}" oninput="guardarMotivo('${fecha}','${instId}','${g.id}',this.value)">
       </td>
@@ -688,7 +706,7 @@ function renderAsistencia(){
       <button class="btn btn-accent btn-sm" onclick="marcarTodos('${fecha}','${instId}')">Marcar todos presentes</button>
     </div>
     <div class="table-wrap"><table class="responsive">
-      <thead><tr><th>Guardia</th><th>Estado</th><th>Atraso</th><th>Motivo de falta</th></tr></thead>
+      <thead><tr><th>Guardia</th><th>Tipo de turno</th><th>Estado</th><th>Atraso</th><th>Motivo de falta</th></tr></thead>
       <tbody>${filas}</tbody></table></div>
     <div style="padding:10px 14px;font-size:.8rem;color:var(--gray)">Los cambios se guardan automáticamente en este dispositivo.</div>
   </div>`;
@@ -701,9 +719,9 @@ function marcar(fecha,instId,gid,pres){
   if(!pres){
     const resp=prompt('Motivo de la falta de '+(g?g.nombre:'el guardia')+':',prev.motivo||'');
     if(resp===null)return; /* cancelado: no cambia */
-    reg[gid]={presente:false,motivo:resp.trim(),hora:prev.hora||horaAhora(),atraso:null,atrasoTxt:''};
+    reg[gid]={presente:false,motivo:resp.trim(),hora:prev.hora||horaAhora(),atraso:null,atrasoTxt:'',tipo:prev.tipo||'pauta',cambioDe:prev.cambioDe||''};
   }else{
-    reg[gid]={presente:true,motivo:'',hora:horaAhora(),atraso:prev.atraso??null,atrasoTxt:prev.atrasoTxt||''};
+    reg[gid]={presente:true,motivo:'',hora:horaAhora(),atraso:prev.atraso??null,atrasoTxt:prev.atrasoTxt||'',tipo:prev.tipo||'pauta',cambioDe:prev.cambioDe||''};
   }
   guardar(LS_A,asistencia);
   renderAsistencia();renderDashboard();renderInstalaciones();renderControl();
@@ -711,7 +729,7 @@ function marcar(fecha,instId,gid,pres){
 }
 function guardarMotivo(fecha,instId,gid,val){
   const reg=getReg(fecha,instId);
-  if(!reg[gid])reg[gid]={presente:false,motivo:'',hora:'',atraso:null,atrasoTxt:''};
+  if(!reg[gid])reg[gid]={presente:false,motivo:'',hora:'',atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''};
   reg[gid].presente=false;reg[gid].motivo=val;
   if(!reg[gid].hora)reg[gid].hora=horaAhora();
   guardar(LS_A,asistencia);
@@ -719,7 +737,7 @@ function guardarMotivo(fecha,instId,gid,val){
 function marcarTodos(fecha,instId){
   const gInst=guardias.filter(g=>g.instalacionId===instId);
   const reg=getReg(fecha,instId);
-  gInst.forEach(g=>reg[g.id]={presente:true,motivo:'',hora:horaAhora(),atraso:null,atrasoTxt:''});
+  gInst.forEach(g=>reg[g.id]={presente:true,motivo:'',hora:horaAhora(),atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''});
   guardar(LS_A,asistencia);
   renderAsistencia();renderDashboard();renderInstalaciones();renderControl();
   toast('✔ Todos marcados presentes');
@@ -747,10 +765,41 @@ function fmtAtraso(min){
 }
 function guardarAtraso(fecha,instId,gid,val){
   const reg=getReg(fecha,instId);
-  if(!reg[gid])reg[gid]={presente:false,motivo:'',hora:'',atraso:null,atrasoTxt:''};
+  if(!reg[gid])reg[gid]={presente:false,motivo:'',hora:'',atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''};
   const p=parseAtraso(val);
   reg[gid].atraso=p.min;reg[gid].atrasoTxt=p.txt;
   guardar(LS_A,asistencia);
+}
+/* Tipo de turno: pauta, sin pauta, turno extra o cambio de turno (por qué guardia) */
+function guardarTipo(fecha,instId,gid,tipo){
+  const reg=getReg(fecha,instId);
+  if(!reg[gid])reg[gid]={presente:false,motivo:'',hora:'',atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''};
+  reg[gid].tipo=tipo;
+  if(tipo!=='cambio')reg[gid].cambioDe='';
+  guardar(LS_A,asistencia);
+  renderAsistencia();renderDashboard();renderInstalaciones();renderControl();
+}
+function guardarCambioDe(fecha,instId,gid,val){
+  const reg=getReg(fecha,instId);
+  if(!reg[gid])reg[gid]={presente:false,motivo:'',hora:'',atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''};
+  reg[gid].tipo='cambio';reg[gid].cambioDe=val;
+  guardar(LS_A,asistencia);
+}
+
+/* etiqueta del tipo de turno para Control */
+function tipoTag(r){
+  const t=r&&r.tipo?r.tipo:'pauta';
+  if(t==='pauta')return '<span class="tag blue">Con pauta</span>';
+  if(t==='sin')return '<span class="tag gray">Sin pauta</span>';
+  if(t==='extra')return '<span class="tag green">Turno extra</span>';
+  return '<span class="tag red">Cambio'+(r&&r.cambioDe?' · '+esc(r.cambioDe):'')+'</span>';
+}
+function tipoTexto(r){
+  const t=r&&r.tipo?r.tipo:'pauta';
+  if(t==='pauta')return 'Con pauta';
+  if(t==='sin')return 'Sin pauta';
+  if(t==='extra')return 'Turno extra';
+  return 'Cambio'+(r&&r.cambioDe?' por '+r.cambioDe:'');
 }
 
 /* ================= RENDER: CONTROL ================= */
@@ -766,9 +815,10 @@ function renderControl(){
   if(!insts.length){body.innerHTML=`<div class="empty"><div class="big">📋</div><p>No hay instalaciones registradas.</p></div>`;return}
   body.innerHTML=insts.map(inst=>{
     const gInst=guardias.filter(g=>g.instalacionId===inst.id);
-    const falt=faltantesDe(fecha,inst.id,gInst);
-    const pres=gInst.length-falt.length;
-    const p=calcPct(pres,gInst.length);
+    const contados=gInst.filter(g=>{const r=getReg(fecha,inst.id)[g.id];const t=r?r.tipo:'pauta';return t==='pauta'||t==='extra'});
+    const falt=faltantesDe(fecha,inst.id,contados);
+    const pres=contados.length-falt.length;
+    const p=calcPct(pres,contados.length);
     if(!gInst.length)return `<div class="card"><h3 style="color:var(--navy)">${esc(inst.nombre)}</h3>
       <p style="color:var(--gray);font-size:.85rem">Sin guardias asignados.</p></div>`;
     const rows=gInst.map(g=>{
@@ -777,6 +827,7 @@ function renderControl(){
       return `<tr>
         <td data-label="Guardia"><b>${esc(g.nombre)}</b></td>
         <td data-label="Turno">${g.turno?esc(g.turno):'<span class="na">—</span>'}</td>
+        <td data-label="Tipo">${tipoTag(r)}</td>
         <td data-label="Estado">${st}</td>
         <td data-label="Hora">${r&&r.hora?esc(r.hora):'—'}</td>
         <td data-label="Atraso">${r&&r.atraso!=null?fmtAtraso(r.atraso):'<span class="na">—</span>'}</td>
@@ -786,10 +837,10 @@ function renderControl(){
     return `<div class="card" style="padding:0;overflow:hidden">
       <div style="padding:14px 16px;background:linear-gradient(135deg,var(--navy),#123a63);color:#fff;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <div><h3 style="font-size:1rem">${esc(inst.nombre)}</h3>
-          <span style="font-size:.78rem;color:#b6c8e0">${fmtFec(fecha)} · Presentes ${pres}/${gInst.length} (${p===null?'S/D':p+'%'})</span></div>
+          <span style="font-size:.78rem;color:#b6c8e0">${fmtFec(fecha)} · Presentes ${pres}/${contados.length} en pauta/extra (${p===null?'S/D':p+'%'})${gInst.length>contados.length?' · '+gInst.length+' guardias en total':''}</span></div>
       </div>
       <div class="table-wrap"><table class="responsive">
-        <thead><tr><th>Guardia</th><th>Turno</th><th>Estado</th><th>Hora</th><th>Atraso</th><th>Motivo</th></tr></thead>
+        <thead><tr><th>Guardia</th><th>Turno</th><th>Tipo</th><th>Estado</th><th>Hora</th><th>Atraso</th><th>Motivo</th></tr></thead>
         <tbody>${rows}</tbody></table></div>
     </div>`;
   }).join('');
@@ -844,9 +895,10 @@ function renderInstalaciones(){
   document.getElementById('iEmpty').classList.toggle('hidden',instalaciones.length>0);
   document.getElementById('instList').innerHTML=list.map(inst=>{
     const gInst=guardias.filter(g=>g.instalacionId===inst.id);
-    const falt=faltantesDe(fecha,inst.id,gInst);
-    const pres=gInst.length-falt.length;
-    const p=calcPct(pres,gInst.length);
+    const contados=gInst.filter(g=>{const r=getReg(fecha,inst.id)[g.id];const t=r?r.tipo:'pauta';return t==='pauta'||t==='extra'});
+    const falt=faltantesDe(fecha,inst.id,contados);
+    const pres=contados.length-falt.length;
+    const p=calcPct(pres,contados.length);
     const rows=gInst.map(g=>`<tr>
       <td data-label="Guardia"><b>${esc(g.nombre)}</b>${g.turno?' <span class="tag gray">'+esc(g.turno)+'</span>':''}</td>
       <td data-label="Test de droga">${g.testDroga?'<span class="tag green">✔ Al día</span>':'<span class="tag red">✘ Pendiente</span>'}<span class="mini" style="margin-left:6px">${g.testDrogaFecha?fmtFec(g.testDrogaFecha):''}</span></td>
@@ -864,9 +916,10 @@ function renderInstalaciones(){
         ?`<div class="inst-sup"><b>Supervisor:</b> ${esc(inst.supervisorNombre)}${inst.supervisorTel?' · '+esc(inst.supervisorTel):''}${inst.supervisorEmail?' · '+esc(inst.supervisorEmail):''}</div>`
         :'<div class="inst-sup" style="color:var(--gray)">Sin supervisor asignado</div>'}
       <div class="inst-row">
-        <span>Total: <b>${gInst.length}</b> · Presentes: <b>${pres}</b> · Faltan: <b style="color:${falt.length?'var(--red)':'var(--green)'}">${falt.length}</b></span>
+        <span>En pauta/extra: <b>${contados.length}</b> · Presentes: <b>${pres}</b> · Faltan: <b style="color:${falt.length?'var(--red)':'var(--green)'}">${falt.length}</b></span>
         <span class="pct ${p===null?'':pctCls(p)}">${p===null?'S/D':p+'%'}</span>
       </div>
+      ${gInst.length>contados.length?`<div style="font-size:.72rem;color:var(--gray)">Excluidos del cálculo (sin pauta/cambio): ${gInst.length-contados.length} · Total asignados: ${gInst.length}</div>`:''}
       <div class="bar"><span class="${p===null?'':pctCls(p)}" style="width:${p||0}%"></span></div>
       ${gInst.length?`<div class="table-wrap"><table class="responsive">
         <thead><tr><th>Guardia</th><th>Test de droga</th><th>R.R.I.</th></tr></thead>
@@ -1120,16 +1173,17 @@ function imprimirControl(){
   let body='';
   insts.forEach(inst=>{
     const gInst=guardias.filter(g=>g.instalacionId===inst.id);
-    const falt=faltantesDe(fecha,inst.id,gInst);
-    const pres=gInst.length-falt.length;
-    const p=calcPct(pres,gInst.length);
-    body+=`<h3>${esc(inst.nombre)}${inst.grupo?' · '+esc(inst.grupo):''} <span class="res">— ${pres}/${gInst.length} presentes (${p===null?'S/D':p+'%'})</span></h3>`;
+    const contados=gInst.filter(g=>{const r=getReg(fecha,inst.id)[g.id];const t=r?r.tipo:'pauta';return t==='pauta'||t==='extra'});
+    const falt=faltantesDe(fecha,inst.id,contados);
+    const pres=contados.length-falt.length;
+    const p=calcPct(pres,contados.length);
+    body+=`<h3>${esc(inst.nombre)}${inst.grupo?' · '+esc(inst.grupo):''} <span class="res">— ${pres}/${contados.length} presentes en pauta/extra (${p===null?'S/D':p+'%'})${gInst.length>contados.length?' · '+gInst.length+' guardias en total':''}</span></h3>`;
     if(inst.supervisorNombre)body+=`<p class="sup">Supervisor: ${esc(inst.supervisorNombre)}${inst.supervisorTel?' · '+esc(inst.supervisorTel):''}${inst.supervisorEmail?' · '+esc(inst.supervisorEmail):''}</p>`;
     if(!gInst.length){body+='<p class="sup">Sin guardias asignados.</p>';return}
-    body+=`<table><tr><th>Guardia</th><th>Turno</th><th>Estado</th><th>Hora</th><th>Atraso</th><th>Motivo de falta</th></tr>`+
+    body+=`<table><tr><th>Guardia</th><th>Turno</th><th>Tipo</th><th>Estado</th><th>Hora</th><th>Atraso</th><th>Motivo de falta</th></tr>`+
       gInst.map(g=>{const r=getReg(fecha,inst.id)[g.id];
         const st=!r?'Sin registro':r.presente?'Presente':'AUSENTE';
-        return `<tr><td>${esc(g.nombre)}</td><td>${esc(g.turno||'—')}</td><td class="${r&&!r.presente?'a':r?'p':''}">${st}</td><td>${r&&r.hora?esc(r.hora):'—'}</td><td>${r&&r.atraso!=null?fmtAtraso(r.atraso):'—'}</td><td>${r&&r.motivo?esc(r.motivo):'—'}</td></tr>`}).join('')+`</table>`;
+        return `<tr><td>${esc(g.nombre)}</td><td>${esc(g.turno||'—')}</td><td>${tipoTexto(r)}</td><td class="${r&&!r.presente?'a':r?'p':''}">${st}</td><td>${r&&r.hora?esc(r.hora):'—'}</td><td>${r&&r.atraso!=null?fmtAtraso(r.atraso):'—'}</td><td>${r&&r.motivo?esc(r.motivo):'—'}</td></tr>`}).join('')+`</table>`;
   });
   const w=window.open('','_blank');
   w.document.write(cabeceraImpresion('CONTROL DE ASISTENCIA','Fecha: '+fmtFec(fecha))+body+pieImpresion());
@@ -1244,9 +1298,9 @@ function cargarEjemplo(){
   ];
   asistencia={};
   asistencia[hoy]={};
-  asistencia[hoy]['i1']={g1:{presente:true,motivo:'',hora:'08:02',atraso:null,atrasoTxt:''},g2:{presente:true,motivo:'',hora:'08:20',atraso:20,atrasoTxt:'20'},g3:{presente:false,motivo:'Licencia médica',hora:'08:15',atraso:null,atrasoTxt:''}};
-  asistencia[hoy]['i2']={g4:{presente:true,motivo:'',hora:'20:01',atraso:null,atrasoTxt:''},g5:{presente:true,motivo:'',hora:'08:45',atraso:45,atrasoTxt:'45'},g6:{presente:false,motivo:'No se presentó, sin aviso',hora:'08:20',atraso:null,atrasoTxt:''}};
-  asistencia[hoy]['i3']={g7:{presente:true,motivo:'',hora:'20:03',atraso:null,atrasoTxt:''},g8:{presente:false,motivo:'',hora:'',atraso:null,atrasoTxt:''}};
+  asistencia[hoy]['i1']={g1:{presente:true,motivo:'',hora:'08:02',atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''},g2:{presente:true,motivo:'',hora:'08:20',atraso:20,atrasoTxt:'20',tipo:'extra',cambioDe:''},g3:{presente:false,motivo:'Licencia médica',hora:'08:15',atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''}};
+  asistencia[hoy]['i2']={g4:{presente:true,motivo:'',hora:'20:01',atraso:null,atrasoTxt:'',tipo:'sin',cambioDe:''},g5:{presente:true,motivo:'',hora:'08:45',atraso:45,atrasoTxt:'45',tipo:'cambio',cambioDe:'por Felipe Bravo'},g6:{presente:false,motivo:'No se presentó, sin aviso',hora:'08:20',atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''}};
+  asistencia[hoy]['i3']={g7:{presente:true,motivo:'',hora:'20:03',atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''},g8:{presente:false,motivo:'',hora:'',atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''}};
   guardarTodo();renderTodo();
   toast('✅ Datos de ejemplo cargados');
 }
