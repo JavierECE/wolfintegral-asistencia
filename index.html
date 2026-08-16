@@ -547,12 +547,12 @@ footer b{color:#7db8ff}
 </div>
 
 <div id="toast"></div>
-<footer>WOLF<b>INTEGRAL</b> · Control de Asistencia de Guardias · Los datos se guardan automáticamente en este dispositivo · <b>v2.9</b></footer>
+<footer>WOLF<b>INTEGRAL</b> · Control de Asistencia de Guardias · Los datos se guardan automáticamente en este dispositivo · <b>v3.0</b></footer>
 
 <script>
 /* ================= DATOS ================= */
 const LS_G='wi_guardias', LS_I='wi_instalaciones', LS_A='wi_asistencia';
-const APP_VER='v2.9';
+const APP_VER='v3.0';
 let guardias=[], instalaciones=[], asistencia={};
 const NACIONALIDADES=['Chile','Venezuela','Colombia','Argentina','China','Perú','Bolivia','Brasil','Otro'];
 const hoyStr=()=>{const d=new Date();return d.toISOString().slice(0,10)};
@@ -561,7 +561,15 @@ const horaAhora=()=>new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute
 const DIA=['dom','lun','mar','mié','jue','vie','sáb'];
 function cargar(){try{guardias=JSON.parse(localStorage.getItem(LS_G))||[]}catch(e){guardias=[]}
   try{instalaciones=JSON.parse(localStorage.getItem(LS_I))||[]}catch(e){instalaciones=[]}
-  try{asistencia=JSON.parse(localStorage.getItem(LS_A))||{}}catch(e){asistencia={}}}
+  try{asistencia=JSON.parse(localStorage.getItem(LS_A))||{}}catch(e){asistencia={}}
+  /* Migración: quien tiene turno extra o cambio registrado sin marcarse (sin hora) se considera presente */
+  Object.values(asistencia).forEach(dia=>{
+    Object.values(dia).forEach(inst=>{
+      Object.values(inst).forEach(r=>{
+        if(r&&(r.tipo==='extra'||r.tipo==='cambio')&&!r.presente&&!r.hora)r.presente=true;
+      });
+    });
+  });}
 function guardar(k,v){
   try{localStorage.setItem(k,JSON.stringify(v));return true}
   catch(e){
@@ -788,6 +796,10 @@ function guardarTipo(fecha,instId,gid,tipo){
     /* Sin turno por pauta: se considera ausente con ese motivo */
     reg[gid].presente=false;
     reg[gid].motivo='Sin turno por pauta';
+  }else if(tipo==='extra'||tipo==='cambio'){
+    /* quien hace turno extra o cambio de turno queda presente automáticamente */
+    reg[gid].presente=true;
+    if(!reg[gid].hora)reg[gid].hora=horaAhora();
   }else if(reg[gid].motivo==='Sin turno por pauta'){
     /* al salir de "sin pauta" se limpia el motivo automático */
     reg[gid].motivo='';
@@ -801,6 +813,9 @@ function guardarCambioDe(fecha,instId,gid,val){
   const reg=getReg(fecha,instId);
   if(!reg[gid])reg[gid]={presente:false,motivo:'',hora:'',atraso:null,atrasoTxt:'',tipo:'pauta',cambioDe:''};
   reg[gid].tipo='cambio';reg[gid].cambioDe=val;
+  /* quien hace un cambio de turno queda presente */
+  reg[gid].presente=true;
+  if(!reg[gid].hora)reg[gid].hora=horaAhora();
   guardar(LS_A,asistencia);
 }
 
