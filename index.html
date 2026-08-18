@@ -498,6 +498,14 @@ footer b{color:#7db8ff}
           <input id="miDireccion" placeholder="Calle, comuna, ciudad">
         </div>
         <div class="field">
+          <label>Hora de apertura</label>
+          <input id="miApertura" type="time">
+        </div>
+        <div class="field">
+          <label>Hora de cierre</label>
+          <input id="miCierre" type="time">
+        </div>
+        <div class="field">
           <label>Supervisor</label>
           <input id="miSupNombre" placeholder="Nombre del supervisor">
         </div>
@@ -547,12 +555,12 @@ footer b{color:#7db8ff}
 </div>
 
 <div id="toast"></div>
-<footer>WOLF<b>INTEGRAL</b> · Control de Asistencia de Guardias · Los datos se guardan automáticamente en este dispositivo · <b>v3.0</b></footer>
+<footer>WOLF<b>INTEGRAL</b> · Control de Asistencia de Guardias · Los datos se guardan automáticamente en este dispositivo · <b>v3.1</b></footer>
 
 <script>
 /* ================= DATOS ================= */
 const LS_G='wi_guardias', LS_I='wi_instalaciones', LS_A='wi_asistencia';
-const APP_VER='v3.0';
+const APP_VER='v3.1';
 let guardias=[], instalaciones=[], asistencia={};
 const NACIONALIDADES=['Chile','Venezuela','Colombia','Argentina','China','Perú','Bolivia','Brasil','Otro'];
 const hoyStr=()=>{const d=new Date();return d.toISOString().slice(0,10)};
@@ -612,7 +620,7 @@ function renderDashboard(){
   const cards=instalaciones.map(inst=>{
     const gInst=guardias.filter(g=>g.instalacionId===inst.id);
     /* Solo cuentan en el cálculo quienes están con turno por pauta o turno extra */
-    const contados=gInst.filter(g=>{const r=getReg(fecha,inst.id)[g.id];const t=r?r.tipo:'pauta';return t==='pauta'||t==='extra'});
+    const contados=gInst.filter(g=>{const r=getReg(fecha,inst.id)[g.id];const t=r?r.tipo:'pauta';return t==='pauta'||t==='extra'||t==='cambio'});
     const falt=faltantesDe(fecha,inst.id,contados);
     const pres=contados.length-falt.length;
     esperados+=contados.length;presentes+=pres;
@@ -641,18 +649,18 @@ function renderDashboard(){
         <span class="light ${light}"></span>
         <div class="inst-title">
           <h3>${esc(c.inst.nombre)}</h3>
-          <div class="addr">${esc(c.inst.direccion||'')}${c.inst.grupo?' · Grupo: '+esc(c.inst.grupo):''}</div>
+          <div class="addr">${esc(c.inst.direccion||'')}${c.inst.grupo?' · Grupo: '+esc(c.inst.grupo):''}${horarioDe(c.inst)?' · '+horarioDe(c.inst):''}</div>
         </div>
       </div>
       ${c.inst.supervisorNombre?`<div class="inst-sup">Supervisor: <b>${esc(c.inst.supervisorNombre)}</b>${c.inst.supervisorTel?' · '+esc(c.inst.supervisorTel):''}</div>`:''}
       ${c.contados.length===0?`<div style="font-size:.75rem;color:var(--amber);font-weight:600;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:6px 9px">
-        ${c.gInst.length===0?'⚠ Sin guardias asignados a esta instalación':`⚠ ${c.gInst.length} guardia(s) con tipo "sin pauta" o "cambio de turno" — excluidos del cálculo`}
+        ${c.gInst.length===0?'⚠ Sin guardias asignados a esta instalación':`⚠ ${c.gInst.length} guardia(s) con tipo "sin turno por pauta" — excluidos del cálculo`}
       </div>`:''}
       <div class="inst-row">
-        <span>En pauta/extra: <b>${c.contados.length}</b> · Presentes: <b>${c.pres}</b></span>
+        <span>En turno: <b>${c.contados.length}</b> · Presentes: <b>${c.pres}</b></span>
         <span class="pct ${c.p===null?'':pctCls(c.p)}">${c.p===null?'S/D':c.p+'%'}</span>
       </div>
-      ${c.gInst.length>c.contados.length&&c.contados.length>0?`<div style="font-size:.72rem;color:var(--gray)">Excluidos del cálculo (sin pauta/cambio de turno): ${c.gInst.length-c.contados.length}</div>`:''}
+      ${c.gInst.length>c.contados.length&&c.contados.length>0?`<div style="font-size:.72rem;color:var(--gray)">Excluidos del cálculo (sin pauta): ${c.gInst.length-c.contados.length}</div>`:''}
       <div class="bar"><span class="${c.p===null?'':pctCls(c.p)}" style="width:${c.p||0}%"></span></div>
       <div class="inst-row" style="justify-content:flex-start;gap:10px">
         ${c.contados.length===0
@@ -665,6 +673,14 @@ function renderDashboard(){
   }).join('');
 }
 function irARegistrar(instId){document.getElementById('asistInst').value=instId;irATab('asistencia')}
+/* horario de apertura/cierre de una instalación */
+function horarioDe(inst){
+  if(!inst)return'';
+  if(inst.apertura&&inst.cierre)return'🕗 Horario: '+inst.apertura+' – '+inst.cierre;
+  if(inst.apertura)return'🕗 Apertura: '+inst.apertura;
+  if(inst.cierre)return'🕗 Cierre: '+inst.cierre;
+  return'';
+}
 
 /* ================= RENDER: ASISTENCIA ================= */
 function renderAsistencia(){
@@ -698,7 +714,7 @@ function renderAsistencia(){
         </select>
         <input class="cambio-input ${tipo==='cambio'?'':'hidden'}" id="cam-${g.id}" placeholder="¿Por qué guardia?"
           value="${esc(r&&r.cambioDe?r.cambioDe:'')}" oninput="guardarCambioDe('${fecha}','${instId}','${g.id}',this.value)">
-        <div class="tipo-hint ${tipo==='sin'?'':'hidden'}">Se considerará ausente con motivo "sin turno por pauta"</div>
+        <div class="tipo-hint">${tipo==='sin'?'Se considerará ausente con motivo "sin turno por pauta"':'Al elegir este tipo se marca presente automáticamente'}</div>
       </td>
       <td data-label="Estado"><div class="seg">
         <button type="button" class="${pres?'on-pres':''}" onclick="marcar('${fecha}','${instId}','${g.id}',true)">✔ Presente</button>
@@ -796,13 +812,12 @@ function guardarTipo(fecha,instId,gid,tipo){
     /* Sin turno por pauta: se considera ausente con ese motivo */
     reg[gid].presente=false;
     reg[gid].motivo='Sin turno por pauta';
-  }else if(tipo==='extra'||tipo==='cambio'){
-    /* quien hace turno extra o cambio de turno queda presente automáticamente */
+  }else{
+    /* Con pauta, turno extra o cambio: quien hace el turno queda presente automáticamente */
     reg[gid].presente=true;
     if(!reg[gid].hora)reg[gid].hora=horaAhora();
-  }else if(reg[gid].motivo==='Sin turno por pauta'){
     /* al salir de "sin pauta" se limpia el motivo automático */
-    reg[gid].motivo='';
+    if(reg[gid].motivo==='Sin turno por pauta')reg[gid].motivo='';
   }
   reg[gid].tipo=tipo;
   if(tipo!=='cambio')reg[gid].cambioDe='';
@@ -848,7 +863,7 @@ function renderControl(){
   if(!insts.length){body.innerHTML=`<div class="empty"><div class="big">📋</div><p>No hay instalaciones registradas.</p></div>`;return}
   body.innerHTML=insts.map(inst=>{
     const gInst=guardias.filter(g=>g.instalacionId===inst.id);
-    const contados=gInst.filter(g=>{const r=getReg(fecha,inst.id)[g.id];const t=r?r.tipo:'pauta';return t==='pauta'||t==='extra'});
+    const contados=gInst.filter(g=>{const r=getReg(fecha,inst.id)[g.id];const t=r?r.tipo:'pauta';return t==='pauta'||t==='extra'||t==='cambio'});
     const falt=faltantesDe(fecha,inst.id,contados);
     const pres=contados.length-falt.length;
     const p=calcPct(pres,contados.length);
@@ -870,7 +885,7 @@ function renderControl(){
     return `<div class="card" style="padding:0;overflow:hidden">
       <div style="padding:14px 16px;background:linear-gradient(135deg,var(--navy),#123a63);color:#fff;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <div><h3 style="font-size:1rem">${esc(inst.nombre)}</h3>
-          <span style="font-size:.78rem;color:#b6c8e0">${fmtFec(fecha)} · Presentes ${pres}/${contados.length} en pauta/extra (${p===null?'S/D':p+'%'})${gInst.length>contados.length?' · '+gInst.length+' guardias en total':''}</span></div>
+          <span style="font-size:.78rem;color:#b6c8e0">${fmtFec(fecha)} · Presentes ${pres}/${contados.length} en turno (${p===null?'S/D':p+'%'})${gInst.length>contados.length?' · '+gInst.length+' guardias en total':''}${horarioDe(inst)?' · '+horarioDe(inst):''}</span></div>
       </div>
       <div class="table-wrap"><table class="responsive">
         <thead><tr><th>Guardia</th><th>Turno</th><th>Tipo</th><th>Estado</th><th>Hora</th><th>Atraso</th><th>Motivo</th></tr></thead>
@@ -928,7 +943,7 @@ function renderInstalaciones(){
   document.getElementById('iEmpty').classList.toggle('hidden',instalaciones.length>0);
   document.getElementById('instList').innerHTML=list.map(inst=>{
     const gInst=guardias.filter(g=>g.instalacionId===inst.id);
-    const contados=gInst.filter(g=>{const r=getReg(fecha,inst.id)[g.id];const t=r?r.tipo:'pauta';return t==='pauta'||t==='extra'});
+    const contados=gInst.filter(g=>{const r=getReg(fecha,inst.id)[g.id];const t=r?r.tipo:'pauta';return t==='pauta'||t==='extra'||t==='cambio'});
     const falt=faltantesDe(fecha,inst.id,contados);
     const pres=contados.length-falt.length;
     const p=calcPct(pres,contados.length);
@@ -942,20 +957,20 @@ function renderInstalaciones(){
         <span class="light ${p===null?'amber':falt.length>0?'red':'green'}"></span>
         <div class="inst-title">
           <h3>${esc(inst.nombre)}</h3>
-          <div class="addr">${esc(inst.direccion||'')}${inst.grupo?' · Grupo: '+esc(inst.grupo):''}</div>
+          <div class="addr">${esc(inst.direccion||'')}${inst.grupo?' · Grupo: '+esc(inst.grupo):''}${horarioDe(inst)?' · '+horarioDe(inst):''}</div>
         </div>
       </div>
       ${inst.supervisorNombre
         ?`<div class="inst-sup"><b>Supervisor:</b> ${esc(inst.supervisorNombre)}${inst.supervisorTel?' · '+esc(inst.supervisorTel):''}${inst.supervisorEmail?' · '+esc(inst.supervisorEmail):''}</div>`
         :'<div class="inst-sup" style="color:var(--gray)">Sin supervisor asignado</div>'}
       ${contados.length===0?`<div style="font-size:.75rem;color:var(--amber);font-weight:600;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:6px 9px">
-        ${gInst.length===0?'⚠ Sin guardias asignados a esta instalación':`⚠ Todos los guardias con tipo "sin pauta" o "cambio" — excluidos del cálculo`}
+        ${gInst.length===0?'⚠ Sin guardias asignados a esta instalación':`⚠ Todos los guardias con tipo "sin turno por pauta" — excluidos del cálculo`}
       </div>`:''}
       <div class="inst-row">
-        <span>En pauta/extra: <b>${contados.length}</b> · Presentes: <b>${pres}</b> · Faltan: <b style="color:${falt.length?'var(--red)':contados.length===0?'var(--gray)':'var(--green)'}">${falt.length}</b></span>
+        <span>En turno: <b>${contados.length}</b> · Presentes: <b>${pres}</b> · Faltan: <b style="color:${falt.length?'var(--red)':contados.length===0?'var(--gray)':'var(--green)'}">${falt.length}</b></span>
         <span class="pct ${p===null?'':pctCls(p)}">${p===null?'S/D':p+'%'}</span>
       </div>
-      ${gInst.length>contados.length&&contados.length>0?`<div style="font-size:.72rem;color:var(--gray)">Excluidos del cálculo (sin pauta/cambio): ${gInst.length-contados.length} · Total asignados: ${gInst.length}</div>`:''}
+      ${gInst.length>contados.length&&contados.length>0?`<div style="font-size:.72rem;color:var(--gray)">Excluidos del cálculo (sin pauta): ${gInst.length-contados.length} · Total asignados: ${gInst.length}</div>`:''}
       <div class="bar"><span class="${p===null?'':pctCls(p)}" style="width:${p||0}%"></span></div>
       ${gInst.length?`<div class="table-wrap"><table class="responsive">
         <thead><tr><th>Guardia</th><th>Test de droga</th><th>R.R.I.</th></tr></thead>
@@ -1034,6 +1049,8 @@ function abrirModalInstalacion(iid){
   document.getElementById('miNombre').value=i?i.nombre:'';
   document.getElementById('miGrupo').value=i?(i.grupo||''):'';
   document.getElementById('miDireccion').value=i?(i.direccion||''):'';
+  document.getElementById('miApertura').value=i?(i.apertura||''):'';
+  document.getElementById('miCierre').value=i?(i.cierre||''):'';
   document.getElementById('miSupNombre').value=i?(i.supervisorNombre||''):'';
   document.getElementById('miSupTel').value=i?(i.supervisorTel||''):'';
   document.getElementById('miSupEmail').value=i?(i.supervisorEmail||''):'';
@@ -1047,6 +1064,8 @@ function guardarInstalacion(){
     nombre,
     grupo:document.getElementById('miGrupo').value.trim(),
     direccion:document.getElementById('miDireccion').value.trim(),
+    apertura:document.getElementById('miApertura').value,
+    cierre:document.getElementById('miCierre').value,
     supervisorNombre:document.getElementById('miSupNombre').value.trim(),
     supervisorTel:document.getElementById('miSupTel').value.trim(),
     supervisorEmail:document.getElementById('miSupEmail').value.trim()
@@ -1209,11 +1228,12 @@ function imprimirControl(){
   let body='';
   insts.forEach(inst=>{
     const gInst=guardias.filter(g=>g.instalacionId===inst.id);
-    const contados=gInst.filter(g=>{const r=getReg(fecha,inst.id)[g.id];const t=r?r.tipo:'pauta';return t==='pauta'||t==='extra'});
+    const contados=gInst.filter(g=>{const r=getReg(fecha,inst.id)[g.id];const t=r?r.tipo:'pauta';return t==='pauta'||t==='extra'||t==='cambio'});
     const falt=faltantesDe(fecha,inst.id,contados);
     const pres=contados.length-falt.length;
     const p=calcPct(pres,contados.length);
-    body+=`<h3>${esc(inst.nombre)}${inst.grupo?' · '+esc(inst.grupo):''} <span class="res">— ${pres}/${contados.length} presentes en pauta/extra (${p===null?'S/D':p+'%'})${gInst.length>contados.length?' · '+gInst.length+' guardias en total':''}</span></h3>`;
+    body+=`<h3>${esc(inst.nombre)}${inst.grupo?' · '+esc(inst.grupo):''} <span class="res">— ${pres}/${contados.length} presentes en turno (${p===null?'S/D':p+'%'})${gInst.length>contados.length?' · '+gInst.length+' guardias en total':''}</span></h3>`;
+    if(horarioDe(inst))body+=`<p class="sup">${horarioDe(inst).replace('🕗','Horario')}</p>`;
     if(inst.supervisorNombre)body+=`<p class="sup">Supervisor: ${esc(inst.supervisorNombre)}${inst.supervisorTel?' · '+esc(inst.supervisorTel):''}${inst.supervisorEmail?' · '+esc(inst.supervisorEmail):''}</p>`;
     if(!gInst.length){body+='<p class="sup">Sin guardias asignados.</p>';return}
     body+=`<table><tr><th>Guardia</th><th>Turno</th><th>Tipo</th><th>Estado</th><th>Hora</th><th>Atraso</th><th>Motivo de falta</th></tr>`+
@@ -1315,9 +1335,9 @@ function cargarEjemplo(){
   const hoy=hoyStr();
   const ayer=new Date(Date.now()-864e5).toISOString().slice(0,10);
   instalaciones=[
-    {id:'i1',nombre:'Edificio Torre Norte',grupo:'Grupo A',direccion:'Av. Apoquindo 4500, Las Condes',supervisorNombre:'Rodrigo Fuentes',supervisorTel:'+56 9 1234 5678',supervisorEmail:'rfuentes@wolfintegral.cl'},
-    {id:'i2',nombre:'Centro Logístico Quilicura',grupo:'Grupo B',direccion:'Ruta 5 Norte km 14, Quilicura',supervisorNombre:'María Torres',supervisorTel:'+56 9 8765 4321',supervisorEmail:'mtorres@wolfintegral.cl'},
-    {id:'i3',nombre:'Condominio Los Cipreses',grupo:'Grupo A',direccion:'Los Cipreses 1200, La Reina'}
+    {id:'i1',nombre:'Edificio Torre Norte',grupo:'Grupo A',direccion:'Av. Apoquindo 4500, Las Condes',apertura:'08:00',cierre:'20:00',supervisorNombre:'Rodrigo Fuentes',supervisorTel:'+56 9 1234 5678',supervisorEmail:'rfuentes@wolfintegral.cl'},
+    {id:'i2',nombre:'Centro Logístico Quilicura',grupo:'Grupo B',direccion:'Ruta 5 Norte km 14, Quilicura',apertura:'06:00',cierre:'22:00',supervisorNombre:'María Torres',supervisorTel:'+56 9 8765 4321',supervisorEmail:'mtorres@wolfintegral.cl'},
+    {id:'i3',nombre:'Condominio Los Cipreses',grupo:'Grupo A',direccion:'Los Cipreses 1200, La Reina',apertura:'07:00',cierre:'19:00'}
   ];
   const G=(id,nombre,nacionalidad,turno,telefono,email,direccion,carnet,o)=>({
     id,nombre,nacionalidad,turno,telefono,email,direccion,carnet,
